@@ -1,69 +1,33 @@
-FROM python:3.10-slim-bookworm AS base
+FROM python:3.10-slim
 
 WORKDIR /app
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+ENV PATH="/app/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
 
+# 系统依赖 + gsutil 支持
+RUN apt-get update && apt-get install -y \
+    curl unzip gnupg ca-certificates \
+    lsb-release apt-transport-https python3-pip && \
+    pip install --upgrade pip && pip install gsutil && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-FROM base AS build
-
-# Update the package list and install necessary packages
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Build Python dependencies
+# 安装 Python 项目依赖
 COPY requirements.txt .
-RUN python -m venv /app/venv && \
-    . /app/venv/bin/activate && \
-    pip install -r requirements.txt
-#     pip uninstall -y paddlepaddle && \
-#     pip install -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ \
-#         paddlepaddle-gpu==3.0.0rc1
+RUN python -m venv /app/venv && . /app/venv/bin/activate && pip install -r requirements.txt
 
-# Download models
-COPY download_models.py .
-RUN chmod +x download_models.py && \
-    . /app/venv/bin/activate && \
-    python3 download_models.py
+# 下载模型（直接从 GCS）
+RUN mkdir -p /opt/models && \
+    mkdir -p /opt/layoutreader && \
+    gsutil -m cp -r gs://mineru_models/models/* /opt/models/ && \
+    gsutil -m cp -r gs://mineru_models/layoutreader/* /opt/layoutreader/
 
-RUN ls -lh /opt/models && ls -lh /opt/layoutreader
+# 拷贝 API 文件
+COPY app.py .
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
-FROM base AS prod
-
-# Copy Python dependencies and models from the build stage
-COPY --from=build /app/venv /app/venv
-COPY --from=build /opt/models /opt/models
-COPY --from=build /opt/layoutreader /opt/layoutreader
-
-# Update the package list and install necessary packages
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        libgl1 \
-        libglib2.0-0 \
-        libgomp1 && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Create volume for paddleocr models
-# RUN mkdir -p /root/.paddleocr
-# VOLUME [ "/root/.paddleocr" ]
-
-# Copy the app and its configuration file
-COPY entrypoint.sh /app/entrypoint.sh
-COPY magic-pdf.json /root/magic-pdf.json
-COPY app.py /app/app.py
-
-# Expose the port that FastAPI will run on
 EXPOSE 8080
-
-# Command to run FastAPI using Uvicorn, pointing to app.py and binding to 0.0.0.0:8000
-ENTRYPOINT [ "/app/entrypoint.sh" ]
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["--host", "0.0.0.0", "--port", "8080"]
