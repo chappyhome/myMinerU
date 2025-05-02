@@ -60,8 +60,8 @@ COPY magic-pdf.json /root/magic-pdf.json
 COPY app.py /app/app.py
 
 # Expose the port that FastAPI will run on
-EXPOSE 8000
+EXPOSE 8080
 
 # Command to run FastAPI using Uvicorn, pointing to app.py and binding to 0.0.0.0:8000
 ENTRYPOINT [ "/app/entrypoint.sh" ]
-CMD ["--host", "0.0.0.0", "--port", "8000"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]
