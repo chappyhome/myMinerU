@@ -30,9 +30,11 @@ RUN python -m venv /app/venv && \
 
 # Download models
 COPY download_models.py .
-RUN . /app/venv/bin/activate && \
-    ./download_models.py
+RUN chmod +x download_models.py && \
+    . /app/venv/bin/activate && \
+    python3 download_models.py
 
+RUN ls -lh /opt/models && ls -lh /opt/layoutreader
 
 FROM base AS prod
 
